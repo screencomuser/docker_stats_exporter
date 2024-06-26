@@ -1,14 +1,38 @@
-FROM node:14-alpine
+####################################################################################################
+# install stage
+####################################################################################################
 
-RUN mkdir -p /usr/src/app
-WORKDIR /usr/src/app
+FROM node:20-bullseye-slim as develop-stage
 
-COPY package*.json /usr/src/app/
-RUN npm install
+WORKDIR /app
 
-COPY docker_stats_exporter.js /usr/src/app/
+USER root
+
+RUN apt-get update && apt-get -y install dumb-init
+
+RUN npm install -g pnpm && chown -R node:node /app
+
+USER node
+
+COPY package.json pnpm-lock.yaml docker_stats_exporter.js /app/
+
+RUN pnpm install --frozen-lockfile --ignore-scripts
+
+####################################################################################################
+# production stage
+####################################################################################################
+
+FROM node:20-bullseye-slim as production
+
+WORKDIR /app
+
+COPY --from=develop-stage /app/ /app
+COPY --from=develop-stage /usr/bin/dumb-init /usr/bin/dumb-init
 
 EXPOSE 9487
+
 ENV DOCKERSTATS_PORT=9487 DOCKERSTATS_INTERVAL=15 DEBUG=0
 
-ENTRYPOINT [ "npm", "start" ]
+ENTRYPOINT [ "/usr/bin/dumb-init", "--" ]
+
+CMD [ "npm", "start" ]
