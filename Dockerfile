@@ -2,7 +2,7 @@
 # install stage
 ####################################################################################################
 
-FROM node:20-bullseye-slim as develop-stage
+FROM node:20-bullseye-slim AS develop-stage
 
 WORKDIR /app
 
@@ -22,7 +22,7 @@ RUN pnpm install --frozen-lockfile --ignore-scripts
 # production stage
 ####################################################################################################
 
-FROM node:20-bullseye-slim as production
+FROM node:20-bullseye-slim AS production
 
 WORKDIR /app
 
