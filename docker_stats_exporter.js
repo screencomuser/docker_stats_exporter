@@ -34,6 +34,12 @@ const argOptions = commandLineArgs([
     defaultValue: process.env.DOCKERSTATS_HOSTPORT || 0,
   },
   { name: 'collectdefault', type: Boolean },
+  {
+    name: 'ignore',
+    alias: 'g',
+    type: String,
+    defaultValue: process.env.DOCKERSTATS_IGNORE || '',
+  },
 ]);
 const port = argOptions.port;
 const interval = argOptions.interval >= 3 ? argOptions.interval : 3;
@@ -41,6 +47,7 @@ const dockerIP = argOptions.hostip;
 const dockerPort = argOptions.hostport;
 const collectDefaultMetrics =
   process.env.DOCKERSTATS_DEFAULTMETRICS || argOptions.collectdefault;
+const ignoreContainer = argOptions.ignore.split(',');
 
 // Connect to docker
 let dockerOptions;
@@ -145,6 +152,16 @@ const server = http
 server.setTimeout(20000);
 console.log(`INFO: Docker Stats exporter listening on port ${port}`);
 
+function mustIgnoreContainer(names = []) {
+  let ignore = false;
+  for (const name of names) {
+    if (!ignore) {
+      ignore = ignoreContainer.includes(name.replace('/', ''));
+    }
+  }
+  return ignore;
+}
+
 // Main function to get the metrics for each container
 async function gatherMetrics() {
   try {
@@ -157,7 +174,7 @@ async function gatherMetrics() {
     // Get stats for each container in one go
     const promises = [];
     for (const container of containers) {
-      if (container.Id) {
+      if (container.Id && !mustIgnoreContainer(container.Names)) {
         promises.push(
           docker
             .getContainer(container.Id)
@@ -183,14 +200,11 @@ async function gatherMetrics() {
         result.precpu_stats &&
         result.precpu_stats.cpu_usage
       ) {
-        const cpuTotalUsage =
-          result.cpu_stats.cpu_usage.total_usage || 0;
-        const precpuTotalUsage =
-          result.precpu_stats.cpu_usage.total_usage || 0;
+        const cpuTotalUsage = result.cpu_stats.cpu_usage.total_usage || 0;
+        const precpuTotalUsage = result.precpu_stats.cpu_usage.total_usage || 0;
         const cpuDelta = cpuTotalUsage - precpuTotalUsage;
         const cpuSystemUsage = result.cpu_stats.system_cpu_usage || 0;
-        const precpuSystemUsage =
-          result.precpu_stats.system_cpu_usage || 0;
+        const precpuSystemUsage = result.precpu_stats.system_cpu_usage || 0;
         const systemDelta = cpuSystemUsage - precpuSystemUsage;
         const numCpus = result.cpu_stats.online_cpus || 0;
         const cpuPercent = systemDelta
@@ -204,10 +218,9 @@ async function gatherMetrics() {
       // Memory
       if (result.memory_stats) {
         const memUsage = result.memory_stats.usage || 0;
-        const memUsageRss =
-          result.memory_stats.stats?.rss
-            ? result.memory_stats.stats.rss
-            : 0;
+        const memUsageRss = result.memory_stats.stats?.rss
+          ? result.memory_stats.stats.rss
+          : 0;
         const memLimit = result.memory_stats.limit || 0;
         const memPercent = memLimit
           ? Number.parseFloat(((memUsage / memLimit) * 100).toFixed(2))
